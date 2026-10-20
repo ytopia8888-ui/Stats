@@ -1,12 +1,9 @@
-
-name: Build SkyTint Native Overlay APK
+name: Build SkyTint APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -16,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -27,9 +24,19 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-      - name: Grant Gradle permissions
-        run: chmod +x gradlew
+      - name: Check project files
+        run: |
+          ls -la
+          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ]; then
+            echo "::error::settings.gradle or settings.gradle.kts is missing from the repository root."
+            exit 1
+          fi
+
+      - name: Generate Gradle Wrapper
+        run: gradle wrapper --gradle-version 8.9
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
@@ -37,6 +44,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SkyTint-Native-Overlay-APK
+          name: SkyTint-APK
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
