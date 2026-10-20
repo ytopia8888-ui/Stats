@@ -11,7 +11,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,42 +21,52 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract Android project ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          ZIP_FILE="SkyTint_NativeOverlay_Project_FIXED.zip"
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "::error::Could not find $ZIP_FILE in the repository root."
-            echo "Upload the project ZIP to the root of the repository."
-            exit 1
-          fi
-          mkdir -p project
-          unzip -o "$ZIP_FILE" -d project
-          PROJECT_DIR="project/SkyTint_NativeOverlay_Project"
-          if [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
-            echo "::error::settings.gradle was not found inside the expected project folder."
-            find project -maxdepth 4 -type f | head -100
-            exit 1
-          fi
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
+      - name: Locate Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f settings.gradle ] || [ -f settings.gradle.kts ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+          elif [ -f SkyTint_NativeOverlay_Project/settings.gradle ] || [ -f SkyTint_NativeOverlay_Project/settings.gradle.kts ]; then
+            echo "PROJECT_DIR=SkyTint_NativeOverlay_Project" >> "$GITHUB_ENV"
+          else
+            ZIP_FILE=""
+            for f in *.zip; do
+              [ -f "$f" ] || continue
+              ZIP_FILE="$f"
+              break
+            done
+            if [ -z "$ZIP_FILE" ]; then
+              echo "::error::No Android project found. Upload the CONTENTS of SkyTint_NativeOverlay_Project_ROOT_LAUNCH.zip to the repository, not just the ZIP."
+              ls -la
+              exit 1
+            fi
+            mkdir -p extracted
+            unzip -o "$ZIP_FILE" -d extracted
+            SETTINGS="$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
+            if [ -z "$SETTINGS" ]; then
+              echo "::error::No settings.gradle found in the uploaded ZIP."
+              find extracted -maxdepth 4 -type f | head -100
+              exit 1
+            fi
+            PROJECT_DIR="$(dirname "$SETTINGS")"
+            echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          fi
+
       - name: Generate Gradle Wrapper
-        working-directory: project/SkyTint_NativeOverlay_Project
-        run: gradle wrapper --gradle-version 8.9
+        run: gradle -p "$PROJECT_DIR" wrapper --gradle-version 8.9
 
       - name: Build debug APK
-        working-directory: project/SkyTint_NativeOverlay_Project
-        run: ./gradlew assembleDebug --stacktrace
+        run: "$PROJECT_DIR/gradlew" -p "$PROJECT_DIR" assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SkyTint-Native-Overlay-APK
-          path: project/SkyTint_NativeOverlay_Project/app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
