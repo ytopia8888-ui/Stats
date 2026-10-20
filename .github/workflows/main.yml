@@ -3,7 +3,9 @@ name: Build SkyTint APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
@@ -30,39 +32,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f settings.gradle ] || [ -f settings.gradle.kts ]; then
-            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
-          elif [ -f SkyTint_NativeOverlay_Project/settings.gradle ] || [ -f SkyTint_NativeOverlay_Project/settings.gradle.kts ]; then
-            echo "PROJECT_DIR=SkyTint_NativeOverlay_Project" >> "$GITHUB_ENV"
+          PROJECT_DIR=""
+          if [[ -f settings.gradle || -f settings.gradle.kts ]]; then
+            PROJECT_DIR="."
+          elif [[ -f SkyTint_NativeOverlay_Project/settings.gradle || -f SkyTint_NativeOverlay_Project/settings.gradle.kts ]]; then
+            PROJECT_DIR="SkyTint_NativeOverlay_Project"
           else
-            ZIP_FILE=""
-            for f in *.zip; do
-              [ -f "$f" ] || continue
-              ZIP_FILE="$f"
-              break
-            done
-            if [ -z "$ZIP_FILE" ]; then
-              echo "::error::No Android project found. Upload the CONTENTS of SkyTint_NativeOverlay_Project_ROOT_LAUNCH.zip to the repository, not just the ZIP."
+            ZIP_FILE="$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
+            if [[ -z "$ZIP_FILE" ]]; then
+              echo "::error::No Android project found. Upload the extracted project files or the project ZIP."
               ls -la
               exit 1
             fi
             mkdir -p extracted
             unzip -o "$ZIP_FILE" -d extracted
-            SETTINGS="$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
-            if [ -z "$SETTINGS" ]; then
-              echo "::error::No settings.gradle found in the uploaded ZIP."
-              find extracted -maxdepth 4 -type f | head -100
+            SETTINGS_FILE="$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)"
+            if [[ -z "$SETTINGS_FILE" ]]; then
+              echo "::error::No settings.gradle found inside the ZIP."
+              find extracted -maxdepth 5 -type f | head -100
               exit 1
             fi
-            PROJECT_DIR="$(dirname "$SETTINGS")"
-            echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+            PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+            PROJECT_DIR="${PROJECT_DIR#./}"
           fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Using Android project directory: $PROJECT_DIR"
 
       - name: Generate Gradle Wrapper
+        shell: bash
         run: gradle -p "$PROJECT_DIR" wrapper --gradle-version 8.9
 
       - name: Build debug APK
-        run: "$PROJECT_DIR/gradlew" -p "$PROJECT_DIR" assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PROJECT_DIR/gradlew" -p "$PROJECT_DIR" assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
