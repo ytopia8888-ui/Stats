@@ -22,28 +22,42 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Extract Android project ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP_FILE="SkyTint_NativeOverlay_Project_FIXED.zip"
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "::error::Could not find $ZIP_FILE in the repository root."
+            echo "Upload the project ZIP to the root of the repository."
+            exit 1
+          fi
+          mkdir -p project
+          unzip -o "$ZIP_FILE" -d project
+          PROJECT_DIR="project/SkyTint_NativeOverlay_Project"
+          if [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
+            echo "::error::settings.gradle was not found inside the expected project folder."
+            find project -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Check project files
-        run: |
-          ls -la
-          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ]; then
-            echo "::error::settings.gradle or settings.gradle.kts is missing from the repository root."
-            exit 1
-          fi
-
       - name: Generate Gradle Wrapper
+        working-directory: project/SkyTint_NativeOverlay_Project
         run: gradle wrapper --gradle-version 8.9
 
       - name: Build debug APK
+        working-directory: project/SkyTint_NativeOverlay_Project
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SkyTint-APK
-          path: app/build/outputs/apk/debug/*.apk
+          name: SkyTint-Native-Overlay-APK
+          path: project/SkyTint_NativeOverlay_Project/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
